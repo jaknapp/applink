@@ -1,0 +1,18 @@
+# Build output (binary in root)
+/applink
+/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+# Project docs (not for repo)
+PROMPT.md
+
+# Test coverage
+coverage.out
