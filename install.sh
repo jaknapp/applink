@@ -75,11 +75,14 @@ main() {
     curl -sSL "$DOWNLOAD_URL" -o "${TMP_DIR}/${ARCHIVE}"
     tar -xzf "${TMP_DIR}/${ARCHIVE}" -C "$TMP_DIR"
 
-    # Install
-    if [ -w "$INSTALL_DIR" ]; then
+    # Install - create directory if needed
+    if [ -d "$INSTALL_DIR" ] && [ -w "$INSTALL_DIR" ]; then
+        mv "${TMP_DIR}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
+    elif mkdir -p "$INSTALL_DIR" 2>/dev/null; then
         mv "${TMP_DIR}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
     else
         echo "Installing to ${INSTALL_DIR} (requires sudo)..."
+        sudo mkdir -p "$INSTALL_DIR"
         sudo mv "${TMP_DIR}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
     fi
 
