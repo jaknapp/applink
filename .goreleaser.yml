@@ -54,6 +54,7 @@ brews:
     repository:
       owner: jaknapp
       name: homebrew-tap
+    directory: Formula
     homepage: "https://github.com/jaknapp/applink"
     description: "CLI tool for authenticating with OAuth services and managing MCP configurations"
     license: "MIT"
