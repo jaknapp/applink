@@ -11,12 +11,22 @@ A CLI tool for authenticating with SaaS applications and connecting them to AI t
 
 ## Installation
 
+**Homebrew:**
+```bash
+brew install jaknapp/tap/applink
+```
+
+**Install script:**
+```bash
+curl -sSL https://raw.githubusercontent.com/jaknapp/applink/main/install.sh | sh
+```
+
+**Go install:**
 ```bash
 go install github.com/jaknapp/applink/cmd/applink@latest
 ```
 
-Or build from source:
-
+**From source:**
 ```bash
 git clone https://github.com/jaknapp/applink.git
 cd applink
@@ -154,6 +164,10 @@ applink login slack
 ### OAuth callback fails
 
 Ensure port 8888 is available and not blocked by a firewall.
+
+## Releasing
+
+See [RELEASING.md](RELEASING.md) for how to publish new versions.
 
 ## License
 

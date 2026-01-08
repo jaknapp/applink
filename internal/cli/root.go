@@ -7,7 +7,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var debug bool
+var (
+	debug   bool
+	version = "dev"
+	commit  = "none"
+)
+
+// SetVersion sets the version info (called from main with ldflags values)
+func SetVersion(v, c string) {
+	version = v
+	commit = c
+	rootCmd.Version = fmt.Sprintf("%s (%s)", version, commit)
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "applink",
