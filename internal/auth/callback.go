@@ -12,17 +12,19 @@ import (
 	"math/big"
 	"net/http"
 	"time"
+
+	"github.com/jaknapp/applink/internal/certs"
 )
 
-// startCallbackServer starts a local HTTPS server to receive OAuth callbacks
-func startCallbackServer(port int, expectedState string, codeChan chan<- string, errChan chan<- error) *http.Server {
+// startCallbackServer starts a local HTTP/HTTPS server to receive OAuth callbacks
+func startCallbackServer(port int, expectedState string, codeChan chan<- string, errChan chan<- error, useTLS bool) *http.Server {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		// Check for error
 		if errParam := r.URL.Query().Get("error"); errParam != "" {
 			errDesc := r.URL.Query().Get("error_description")
-			w.Header().Set("Content-Type", "text/html")
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, errorHTML, errParam, errDesc)
 			errChan <- fmt.Errorf("%s: %s", errParam, errDesc)
@@ -32,7 +34,7 @@ func startCallbackServer(port int, expectedState string, codeChan chan<- string,
 		// Verify state
 		state := r.URL.Query().Get("state")
 		if state != expectedState {
-			w.Header().Set("Content-Type", "text/html")
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, errorHTML, "Invalid state", "State parameter mismatch")
 			errChan <- fmt.Errorf("state mismatch: possible CSRF attack")
@@ -42,7 +44,7 @@ func startCallbackServer(port int, expectedState string, codeChan chan<- string,
 		// Get authorization code
 		code := r.URL.Query().Get("code")
 		if code == "" {
-			w.Header().Set("Content-Type", "text/html")
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, errorHTML, "Missing code", "No authorization code received")
 			errChan <- fmt.Errorf("no authorization code in callback")
@@ -50,32 +52,56 @@ func startCallbackServer(port int, expectedState string, codeChan chan<- string,
 		}
 
 		// Success!
-		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, successHTML)
 		codeChan <- code
 	})
 
-	// Generate self-signed certificate for localhost
-	tlsCert, err := generateSelfSignedCert()
-	if err != nil {
-		errChan <- fmt.Errorf("failed to generate TLS certificate: %w", err)
-		return nil
-	}
-
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: mux,
-		TLSConfig: &tls.Config{
-			Certificates: []tls.Certificate{tlsCert},
-		},
 	}
 
-	go func() {
-		// Use ListenAndServeTLS with empty cert/key paths since we're using TLSConfig
-		if err := server.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
-			errChan <- fmt.Errorf("callback server error: %w", err)
+	if useTLS {
+		// Try to use CA-signed certificate first (if applink init was run)
+		var tlsCert tls.Certificate
+		var err error
+		var usingCA bool
+
+		if exists, _ := certs.CAExists(); exists {
+			tlsCert, err = certs.GenerateServerCert()
+			if err == nil {
+				usingCA = true
+			}
 		}
-	}()
+
+		// Fall back to self-signed certificate
+		if !usingCA {
+			tlsCert, err = generateSelfSignedCert()
+			if err != nil {
+				errChan <- fmt.Errorf("failed to generate TLS certificate: %w", err)
+				return nil
+			}
+		}
+
+		server.TLSConfig = &tls.Config{
+			Certificates: []tls.Certificate{tlsCert},
+		}
+
+		go func() {
+			// Use ListenAndServeTLS with empty cert/key paths since we're using TLSConfig
+			if err := server.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+				errChan <- fmt.Errorf("callback server error: %w", err)
+			}
+		}()
+	} else {
+		// Start plain HTTP server (allowed for localhost per RFC 8252)
+		go func() {
+			if err := server.ListenAndServe(); err != http.ErrServerClosed {
+				errChan <- fmt.Errorf("callback server error: %w", err)
+			}
+		}()
+	}
 
 	return server
 }
@@ -129,6 +155,7 @@ func generateSelfSignedCert() (tls.Certificate, error) {
 const successHTML = `<!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>Authentication Successful</title>
     <style>
         body {
@@ -174,6 +201,7 @@ const successHTML = `<!DOCTYPE html>
 const errorHTML = `<!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>Authentication Failed</title>
     <style>
         body {

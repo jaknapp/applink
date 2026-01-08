@@ -21,6 +21,11 @@ type Token = storage.Token
 
 // DoOAuthFlow performs the OAuth 2.0 authorization code flow
 func DoOAuthFlow(service *config.Service, creds config.ClientCredentials, port int) (*Token, error) {
+	// Determine if we need TLS
+	// Most OAuth providers (including Slack) allow HTTP for localhost per RFC 8252
+	// We default to HTTP for localhost to avoid certificate issues
+	useTLS := serviceRequiresTLS(service)
+
 	// Generate state parameter for CSRF protection
 	state, err := generateState()
 	if err != nil {
@@ -28,7 +33,7 @@ func DoOAuthFlow(service *config.Service, creds config.ClientCredentials, port i
 	}
 
 	// Build authorization URL
-	authURL, err := buildAuthURL(service, creds.ClientID, port, state)
+	authURL, err := buildAuthURL(service, creds.ClientID, port, state, useTLS)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build auth URL: %w", err)
 	}
@@ -36,7 +41,7 @@ func DoOAuthFlow(service *config.Service, creds config.ClientCredentials, port i
 	// Start callback server
 	codeChan := make(chan string, 1)
 	errChan := make(chan error, 1)
-	server := startCallbackServer(port, state, codeChan, errChan)
+	server := startCallbackServer(port, state, codeChan, errChan, useTLS)
 
 	// Open browser
 	fmt.Printf("Opening browser for authentication...\n")
@@ -61,12 +66,24 @@ func DoOAuthFlow(service *config.Service, creds config.ClientCredentials, port i
 	shutdownServer(server)
 
 	// Exchange code for token
-	token, err := exchangeCode(service, creds, code, port)
+	token, err := exchangeCode(service, creds, code, port, useTLS)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange code: %w", err)
 	}
 
 	return token, nil
+}
+
+// serviceRequiresTLS checks if a service requires HTTPS for redirect URIs
+func serviceRequiresTLS(service *config.Service) bool {
+	switch service.ID {
+	case "slack":
+		// Slack requires HTTPS even for localhost
+		return true
+	default:
+		// Most other services allow HTTP for localhost per RFC 8252
+		return false
+	}
 }
 
 func generateState() (string, error) {
@@ -77,15 +94,20 @@ func generateState() (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-func buildAuthURL(service *config.Service, clientID string, port int, state string) (string, error) {
+func buildAuthURL(service *config.Service, clientID string, port int, state string, useTLS bool) (string, error) {
 	u, err := url.Parse(service.AuthURL)
 	if err != nil {
 		return "", err
 	}
 
+	scheme := "http"
+	if useTLS {
+		scheme = "https"
+	}
+
 	q := u.Query()
 	q.Set("client_id", clientID)
-	q.Set("redirect_uri", fmt.Sprintf("https://localhost:%d/callback", port))
+	q.Set("redirect_uri", fmt.Sprintf("%s://localhost:%d/callback", scheme, port))
 	q.Set("response_type", "code")
 	q.Set("state", state)
 
@@ -102,35 +124,49 @@ func buildAuthURL(service *config.Service, clientID string, port int, state stri
 	return u.String(), nil
 }
 
-func exchangeCode(service *config.Service, creds config.ClientCredentials, code string, port int) (*Token, error) {
+func exchangeCode(service *config.Service, creds config.ClientCredentials, code string, port int, useTLS bool) (*Token, error) {
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
 	data.Set("code", code)
-	data.Set("redirect_uri", fmt.Sprintf("https://localhost:%d/callback", port))
 
-	req, err := http.NewRequest("POST", service.TokenURL, strings.NewReader(data.Encode()))
-	if err != nil {
-		return nil, err
+	scheme := "http"
+	if useTLS {
+		scheme = "https"
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	data.Set("redirect_uri", fmt.Sprintf("%s://localhost:%d/callback", scheme, port))
 
 	// Different services have different auth requirements
+	var req *http.Request
+	var err error
+
 	switch service.ID {
 	case "notion":
 		// Notion uses Basic auth for token exchange
+		req, err = http.NewRequest("POST", service.TokenURL, strings.NewReader(data.Encode()))
+		if err != nil {
+			return nil, err
+		}
 		auth := base64.StdEncoding.EncodeToString([]byte(creds.ClientID + ":" + creds.ClientSecret))
 		req.Header.Set("Authorization", "Basic "+auth)
 	case "slack":
 		// Slack wants credentials in the body
 		data.Set("client_id", creds.ClientID)
 		data.Set("client_secret", creds.ClientSecret)
-		req.Body = io.NopCloser(strings.NewReader(data.Encode()))
+		req, err = http.NewRequest("POST", service.TokenURL, strings.NewReader(data.Encode()))
+		if err != nil {
+			return nil, err
+		}
 	default:
 		// Standard OAuth2: credentials in body
 		data.Set("client_id", creds.ClientID)
 		data.Set("client_secret", creds.ClientSecret)
-		req.Body = io.NopCloser(strings.NewReader(data.Encode()))
+		req, err = http.NewRequest("POST", service.TokenURL, strings.NewReader(data.Encode()))
+		if err != nil {
+			return nil, err
+		}
 	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)

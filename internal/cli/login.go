@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"runtime"
 	"strings"
 
 	"github.com/jaknapp/applink/internal/auth"
+	"github.com/jaknapp/applink/internal/certs"
 	"github.com/jaknapp/applink/internal/config"
 	"github.com/jaknapp/applink/internal/storage"
 	"github.com/spf13/cobra"
@@ -77,6 +81,11 @@ func doOAuthLogin(service *config.Service, serviceName string) (*auth.Token, err
 		return nil, &credentialsNotFoundError{service: service, serviceName: serviceName}
 	}
 
+	// Auto-initialize certificates if needed (for services requiring HTTPS like Slack)
+	if err := ensureCertsInitialized(serviceName); err != nil {
+		return nil, err
+	}
+
 	// Convert to config.ClientCredentials for auth package
 	clientCreds := config.ClientCredentials{
 		ClientID:     creds.ClientID,
@@ -84,6 +93,93 @@ func doOAuthLogin(service *config.Service, serviceName string) (*auth.Token, err
 	}
 
 	return auth.DoOAuthFlow(service, clientCreds, defaultCallbackPort)
+}
+
+// ensureCertsInitialized checks if certificates are set up and initializes them if needed
+func ensureCertsInitialized(serviceName string) error {
+	// Only needed for services that require HTTPS (like Slack)
+	if serviceName != "slack" {
+		return nil
+	}
+
+	// Check if CA exists and is installed
+	caExists, _ := certs.CAExists()
+	if caExists && certs.IsCAInstalled() {
+		return nil // Already set up
+	}
+
+	// Need to initialize
+	fmt.Println()
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("First-time setup: Installing trusted certificates")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
+	fmt.Println("Slack requires HTTPS for OAuth callbacks. To avoid browser")
+	fmt.Println("security warnings, applink will install a local certificate")
+	fmt.Println("authority into your system's trust store.")
+	fmt.Println()
+
+	if runtime.GOOS == "linux" {
+		fmt.Println("Note: This requires sudo access on Linux.")
+		fmt.Println()
+	}
+
+	fmt.Print("Continue? [Y/n] ")
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+	response = strings.TrimSpace(strings.ToLower(response))
+
+	if response != "" && response != "y" && response != "yes" {
+		fmt.Println()
+		fmt.Println("Certificate setup skipped. Your browser will show a security warning.")
+		fmt.Println("Click 'Advanced' → 'Proceed to localhost' to continue.")
+		fmt.Println()
+		return nil // Continue anyway, will fall back to self-signed
+	}
+
+	// Generate CA if it doesn't exist
+	if !caExists {
+		fmt.Println()
+		fmt.Println("Generating certificate authority...")
+		if err := certs.GenerateCA(); err != nil {
+			fmt.Printf("Warning: Failed to generate CA: %v\n", err)
+			fmt.Println("Continuing with self-signed certificate (browser will show warning)")
+			fmt.Println()
+			return nil
+		}
+		fmt.Println("✓ Certificate authority generated")
+	}
+
+	// Install CA
+	fmt.Println("Installing to system trust store...")
+	if err := certs.InstallCA(); err != nil {
+		certPath, _ := certs.GetCACertPath()
+		fmt.Printf("Warning: Failed to install CA: %v\n", err)
+		fmt.Println()
+		fmt.Println("You can install it manually:")
+		switch runtime.GOOS {
+		case "darwin":
+			fmt.Printf("  security add-trusted-cert -r trustRoot -k login.keychain %s\n", certPath)
+		case "linux":
+			fmt.Printf("  sudo cp %s /usr/local/share/ca-certificates/applink-ca.crt\n", certPath)
+			fmt.Println("  sudo update-ca-certificates")
+		case "windows":
+			fmt.Printf("  certutil -addstore -user Root %s\n", certPath)
+		}
+		fmt.Println()
+		fmt.Println("Continuing with browser warning...")
+		return nil
+	}
+
+	fmt.Println("✓ Certificate authority installed")
+	fmt.Println()
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
+
+	return nil
 }
 
 type credentialsNotFoundError struct {
