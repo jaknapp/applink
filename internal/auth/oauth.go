@@ -85,7 +85,7 @@ func buildAuthURL(service *config.Service, clientID string, port int, state stri
 
 	q := u.Query()
 	q.Set("client_id", clientID)
-	q.Set("redirect_uri", fmt.Sprintf("http://localhost:%d/callback", port))
+	q.Set("redirect_uri", fmt.Sprintf("https://localhost:%d/callback", port))
 	q.Set("response_type", "code")
 	q.Set("state", state)
 
@@ -106,7 +106,7 @@ func exchangeCode(service *config.Service, creds config.ClientCredentials, code 
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
 	data.Set("code", code)
-	data.Set("redirect_uri", fmt.Sprintf("http://localhost:%d/callback", port))
+	data.Set("redirect_uri", fmt.Sprintf("https://localhost:%d/callback", port))
 
 	req, err := http.NewRequest("POST", service.TokenURL, strings.NewReader(data.Encode()))
 	if err != nil {

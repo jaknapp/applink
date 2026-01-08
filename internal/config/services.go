@@ -29,7 +29,7 @@ type Service struct {
 	MCPEnvVars map[string]string // Environment variable mappings
 
 	// Setup instructions
-	SetupURL     string // URL to create OAuth app
+	SetupURL          string // URL to create OAuth app
 	SetupInstructions string // Step-by-step instructions
 }
 
@@ -60,7 +60,7 @@ var serviceRegistry = map[string]*Service{
 2. Click "Create New App" → "From scratch"
 3. Name your app (e.g., "applink") and select your workspace
 4. Go to "OAuth & Permissions" in the sidebar
-5. Under "Redirect URLs", add: http://localhost:8888/callback
+5. Under "Redirect URLs", add: https://localhost:8888/callback
 6. Under "User Token Scopes", add these scopes:
    - channels:read, channels:history
    - groups:read, groups:history
@@ -68,13 +68,13 @@ var serviceRegistry = map[string]*Service{
 7. Go to "Basic Information" to find your Client ID and Client Secret`,
 	},
 	"notion": {
-		ID:       "notion",
-		Name:     "Notion",
-		AuthType: AuthTypeOAuth,
-		AuthURL:  "https://api.notion.com/v1/oauth/authorize",
-		TokenURL: "https://api.notion.com/v1/oauth/token",
-		Scopes:   []string{}, // Notion doesn't use scopes in the same way
-		APIURL:   "https://api.notion.com",
+		ID:         "notion",
+		Name:       "Notion",
+		AuthType:   AuthTypeOAuth,
+		AuthURL:    "https://api.notion.com/v1/oauth/authorize",
+		TokenURL:   "https://api.notion.com/v1/oauth/token",
+		Scopes:     []string{}, // Notion doesn't use scopes in the same way
+		APIURL:     "https://api.notion.com",
 		MCPPackage: "@modelcontextprotocol/server-notion",
 		MCPEnvVars: map[string]string{
 			"NOTION_API_TOKEN": "access_token",
@@ -85,7 +85,7 @@ var serviceRegistry = map[string]*Service{
 3. Name your integration (e.g., "applink")
 4. Select the workspace to install it in
 5. Under "Capabilities", ensure it has the access you need
-6. Set the redirect URI to: http://localhost:8888/callback
+6. Set the redirect URI to: https://localhost:8888/callback
 7. Copy the "OAuth client ID" and "OAuth client secret"
 
 Note: After authenticating, you must share specific pages with the integration.`,
@@ -111,7 +111,7 @@ Note: After authenticating, you must share specific pages with the integration.`
 		SetupInstructions: `1. Go to https://linear.app/settings/api
 2. Under "OAuth applications", click "Create new"
 3. Name your application (e.g., "applink")
-4. Set the redirect URI to: http://localhost:8888/callback
+4. Set the redirect URI to: https://localhost:8888/callback
 5. Select the scopes: read, write, issues:create, comments:create
 6. Copy the "Client ID" and "Client Secret"`,
 	},

@@ -33,6 +33,16 @@ cd applink
 go build -o applink ./cmd/applink
 ```
 
+## Local Development
+
+If you installed via Homebrew and want to test local changes:
+
+```bash
+go build -o applink ./cmd/applink && sudo cp applink /opt/homebrew/bin/applink
+```
+
+On Linux or if you installed elsewhere, adjust the destination path accordingly.
+
 ## Quick Start
 
 ### 1. Set up OAuth credentials

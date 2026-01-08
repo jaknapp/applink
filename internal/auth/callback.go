@@ -1,11 +1,20 @@
 package auth
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"net/http"
+	"time"
 )
 
-// startCallbackServer starts a local HTTP server to receive OAuth callbacks
+// startCallbackServer starts a local HTTPS server to receive OAuth callbacks
 func startCallbackServer(port int, expectedState string, codeChan chan<- string, errChan chan<- error) *http.Server {
 	mux := http.NewServeMux()
 
@@ -46,18 +55,75 @@ func startCallbackServer(port int, expectedState string, codeChan chan<- string,
 		codeChan <- code
 	})
 
+	// Generate self-signed certificate for localhost
+	tlsCert, err := generateSelfSignedCert()
+	if err != nil {
+		errChan <- fmt.Errorf("failed to generate TLS certificate: %w", err)
+		return nil
+	}
+
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: mux,
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{tlsCert},
+		},
 	}
 
 	go func() {
-		if err := server.ListenAndServe(); err != http.ErrServerClosed {
+		// Use ListenAndServeTLS with empty cert/key paths since we're using TLSConfig
+		if err := server.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
 			errChan <- fmt.Errorf("callback server error: %w", err)
 		}
 	}()
 
 	return server
+}
+
+// generateSelfSignedCert creates a self-signed TLS certificate for localhost
+func generateSelfSignedCert() (tls.Certificate, error) {
+	// Generate private key
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to generate private key: %w", err)
+	}
+
+	// Create certificate template
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to generate serial number: %w", err)
+	}
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"applink"},
+			CommonName:   "localhost",
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(24 * time.Hour), // Valid for 24 hours
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              []string{"localhost"},
+	}
+
+	// Create certificate
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to create certificate: %w", err)
+	}
+
+	// Encode certificate and key to PEM
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyDER, err := x509.MarshalECPrivateKey(privateKey)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to marshal private key: %w", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	// Create TLS certificate
+	return tls.X509KeyPair(certPEM, keyPEM)
 }
 
 const successHTML = `<!DOCTYPE html>
