@@ -6,7 +6,7 @@ A CLI tool for authenticating with SaaS applications and connecting them to AI t
 
 - **OAuth Authentication**: Authenticate with Slack, Notion, Linear via OAuth
 - **API Key Support**: Store API keys for services like Honeycomb
-- **Secure Storage**: Credentials stored in your system keychain
+- **Secure Storage**: Credentials stored in your system keychain (macOS Keychain, GNOME Keyring, Windows Credential Manager)
 - **MCP Configuration**: Automatically configure Cursor's MCP servers
 
 ## Installation
@@ -25,51 +25,53 @@ go build -o applink ./cmd/applink
 
 ## Quick Start
 
-1. **Configure OAuth credentials** (create `~/.config/applink/config.yaml`):
+### 1. Set up OAuth credentials
 
-```yaml
-services:
-  slack:
-    client_id: "your-slack-client-id"
-    client_secret: "your-slack-client-secret"
-  notion:
-    client_id: "your-notion-client-id"
-    client_secret: "your-notion-client-secret"
-  linear:
-    client_id: "your-linear-client-id"
-    client_secret: "your-linear-client-secret"
-
-settings:
-  callback_port: 8888
+```bash
+applink setup slack
 ```
 
-2. **Authenticate with services**:
+This will:
+- Show you instructions for creating a Slack OAuth app
+- Prompt for your Client ID and Client Secret
+- Store them securely in your system keychain
+
+### 2. Authenticate
 
 ```bash
 applink login slack
-applink login notion
-applink login linear
 ```
 
-3. **Configure Cursor's MCP servers**:
+This opens your browser to complete the OAuth flow.
+
+### 3. Configure Cursor
 
 ```bash
 applink mcp install
 ```
 
-4. **Restart Cursor** to activate MCP servers.
+This configures Cursor's MCP servers for your authenticated services.
+
+### 4. Restart Cursor
+
+Restart Cursor to activate the MCP servers.
 
 ## Usage
 
-### Authentication
+### Setup & Authentication
 
 ```bash
-# OAuth-based services (opens browser)
+# Set up OAuth credentials (one-time per service)
+applink setup slack
+applink setup notion
+applink setup linear
+
+# Authenticate (opens browser)
 applink login slack
 applink login notion
 applink login linear
 
-# API key based services (prompts for key)
+# API key services (prompts for key)
 applink login honeycomb
 ```
 
@@ -107,6 +109,21 @@ applink request notion POST /v1/search --data '{"query": "meeting notes"}'
 applink request linear POST /graphql --data '{"query": "{ viewer { id } }"}'
 ```
 
+## Environment Variables
+
+For CI/CD or systems without a keychain, use environment variables:
+
+```bash
+# OAuth credentials
+export APPLINK_SLACK_CLIENT_ID="your-client-id"
+export APPLINK_SLACK_CLIENT_SECRET="your-client-secret"
+
+# Then authenticate
+applink login slack
+```
+
+Environment variables take priority over keychain credentials.
+
 ## Supported Services
 
 | Service   | Auth Type | MCP Server |
@@ -118,9 +135,25 @@ applink request linear POST /graphql --data '{"query": "{ viewer { id } }"}'
 
 ## Security
 
-- Tokens are stored in your system keychain (macOS Keychain, GNOME Keyring, Windows Credential Manager)
-- Slack uses user tokens (not bot tokens) so you only see what you have access to
-- OAuth flows use localhost callbacks - no public URLs required
+- **Keychain storage**: OAuth credentials and tokens are stored in your system keychain, not in plaintext files
+- **User tokens**: Slack uses user tokens (not bot tokens) so you only see what you have access to
+- **Local OAuth**: OAuth callbacks use localhost - no public URLs required
+
+## Troubleshooting
+
+### Keychain not available (Linux)
+
+On headless Linux systems or containers without a keychain daemon, use environment variables:
+
+```bash
+export APPLINK_SLACK_CLIENT_ID="..."
+export APPLINK_SLACK_CLIENT_SECRET="..."
+applink login slack
+```
+
+### OAuth callback fails
+
+Ensure port 8888 is available and not blocked by a firewall.
 
 ## License
 
