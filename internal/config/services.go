@@ -52,8 +52,8 @@ var serviceRegistry = map[string]*Service{
 		APIURL:     "https://slack.com",
 		MCPPackage: "@modelcontextprotocol/server-slack",
 		MCPEnvVars: map[string]string{
-			"SLACK_USER_TOKEN": "access_token",
-			"SLACK_TEAM_ID":    "team_id",
+			"SLACK_BOT_TOKEN": "access_token",
+			"SLACK_TEAM_ID":   "team_id",
 		},
 		SetupURL: "https://api.slack.com/apps",
 		SetupInstructions: `1. Go to https://api.slack.com/apps
